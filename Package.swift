@@ -20,11 +20,13 @@ let package = Package(
     ],
     targets: [
         .target(
-            name: "NotificationValues"
+            name: "NotificationValues",
+            path: "Sources"
         ),
         .testTarget(
             name: "NotificationValuesTests",
-            dependencies: ["NotificationValues"]
+            dependencies: ["NotificationValues"],
+            path: "Tests"
         ),
     ]
 )
