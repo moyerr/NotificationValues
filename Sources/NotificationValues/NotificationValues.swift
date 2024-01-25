@@ -1,0 +1,227 @@
+import Foundation
+
+// MARK: - NotificationKey
+
+/// A key for posting or receiving values from the notification center.
+///
+/// You can post specific values to the notification center using a notification key.
+/// First, declare a new notification key type, specifying its value type and notification name
+///
+/// ```swift
+/// enum MyNotificationKey: NotificationKey {
+///     typealias Value = String
+///     static let name = Notification.Name("MyNotification")
+/// }
+/// ```
+///
+/// This key can be used to post values of that type to the notification center:
+///
+/// ```swift
+/// NotificationCenter.default
+///     .post("Hello, world!", for: MyNotificationKey.self)
+/// ```
+///
+/// Elsewhere, the key can be used to receive values from the notification center.
+/// For example, to receive values as an asynchronous sequence:
+///
+/// ```swift
+/// let values = NotificationCenter.default.values(for: MyNotificationKey.self)
+///
+/// for await value in values {
+///     print(value)
+/// }
+/// ```
+///
+/// For more information on [`NotificationCenter`](https://developer.apple.com/documentation/foundation/notificationcenter), please refer to Apple's documentation.
+public protocol NotificationKey {
+    /// The type representing the notification key’s value.
+    associatedtype Value
+    
+    /// A tag identifying the notifications associated with this key.
+    static var name: Notification.Name { get }
+}
+
+// MARK: - NotificationCenter
+
+/// ## Topics
+///
+/// ### Posting Values
+/// - ``NotificationCenter/post(_:for:)``
+/// - ``NotificationCenter/post(for:)``
+///
+/// ### Receiving Values as an Asynchronous Sequence
+/// - ``NotificationCenter/values(for:)``
+/// - ``NotificationCenter/Values``
+///
+/// ### Receiving Values as a Combine Publisher
+/// - ``NotificationCenter/valuesPublisher(for:)``
+/// - ``NotificationCenter/ValuesPublisher``
+extension NotificationCenter {
+
+    // MARK: Posting Values
+
+    /// Posts a value to the notification center, using the given key.
+    ///
+    /// - Parameters:
+    ///   - value: The value to post.
+    ///   - key: The notification key.
+    public func post<Key: NotificationKey>(
+        _ value: Key.Value,
+        for key: Key.Type
+    ) {
+        let notification = Notification(
+            name: Key.name,
+            userInfo: [ObjectIdentifier(Key.self): value]
+        )
+
+        post(notification)
+    }
+    
+    /// Posts to the notification center, using the given key.
+    ///
+    /// Use this method when your notification key's value is `Void`.
+    ///
+    /// - Parameter key: The notification key.
+    public func post<Key: NotificationKey>(
+        for key: Key.Type
+    ) where Key.Value == Void {
+        post((), for: key)
+    }
+
+    // MARK: Receiving Values
+
+    /// Returns an asynchronous sequence of values posted to this center with the given key.
+    ///
+    /// Use this method to receive values from the center as an [`AsyncSequence`](https://developer.apple.com/documentation/swift/asyncsequence). You iterate over this sequence with `for-await-in` syntax.
+    ///
+    /// The following example iterates over an asynchronous sequence of hypothetical `AuthState` values:
+    ///
+    /// ```swift
+    /// for await state in NotificationCenter.default.values(for: AuthStateKey.self) {
+    ///     switch state {
+    ///     case .signedIn(let user):
+    ///         print("Signed in as \(user.name)!")
+    ///     case .signedOut:
+    ///         print("Signed out!")
+    ///     }
+    /// }
+    /// ```
+    ///
+    /// - Parameter key: The notification key. The sequence includes only values posted with this key.
+    /// - Returns: An asynchronous sequence of values from the center.
+    public func values<Key: NotificationKey>(
+        for key: Key.Type
+    ) -> Values<Key> {
+        Values(center: self)
+    }
+    
+    /// Returns a publisher that emits values posted to this center with the given key.
+    ///
+    /// Use this method to receive values from the center as a [`Combine.Publisher`](https://developer.apple.com/documentation/combine/publisher). You subscribe to this publisher to start receiving values.
+    ///
+    /// The following example subscribes to a publisher of hypothetical `AuthState` values:
+    ///
+    /// ```swift
+    /// NotificationCenter.default
+    ///    .valuesPublisher(for: AuthStateKey.self)
+    ///    .map { state in
+    ///        guard case .signedIn(let user) = state
+    ///        else { return nil }
+    ///
+    ///        return user
+    ///    }
+    ///    .assign(to: &$currentUser)
+    /// ```
+    ///
+    /// - Parameter key: The notification key. The publisher emits only values posted with this key.
+    /// - Returns: A publisher that emits values from the center.
+    public func valuesPublisher<Key: NotificationKey>(
+        for key: Key.Type
+    ) -> ValuesPublisher<Key> {
+        ValuesPublisher(center: self)
+    }
+}
+
+// MARK: - AsyncSequence Support
+
+extension NotificationCenter {
+    /// An asynchronous sequence of values generated by a notification center with a given key.
+    ///
+    /// Use the ``values(for:)`` method to create an instance of this type, then iterate over its elements with `for-await-in` syntax.
+    public struct Values<Key: NotificationKey>: AsyncSequence {
+        /// The type of element produced by this asynchronous sequence.
+        public typealias Element = Key.Value
+        /// The type of the asynchronous iterator created by this asynchronous sequence.
+        public typealias AsyncIterator = Iterator
+
+        fileprivate typealias Base = AsyncCompactMapSequence<Notifications, Key.Value>
+        
+        /// The asynchronous iterator created by this asynchronous sequence.
+        public struct Iterator: AsyncIteratorProtocol {
+            private var baseIterator: Base.Iterator
+
+            fileprivate init(_ base: Base.Iterator) {
+                self.baseIterator = base
+            }
+            
+            /// Asynchronously advances to the next element and returns it, or ends the sequence if there is no next element.
+            public mutating func next() async -> Key.Value? {
+                await baseIterator.next()
+            }
+        }
+
+        private let base: Base
+
+        fileprivate init(center: NotificationCenter) {
+            self.base = center
+                .notifications(named: Key.name)
+                .compactMap { notification in
+                    notification.userInfo?[ObjectIdentifier(Key.self)] as? Key.Value
+                }
+        }
+        
+        /// Creates the asynchronous iterator that produces elements of this asynchronous sequence.
+        ///
+        /// - Returns: An instance of the AsyncIterator type used to produce elements of the asynchronous sequence.
+        public func makeAsyncIterator() -> Iterator {
+            Iterator(base.makeAsyncIterator())
+        }
+    }
+}
+
+// MARK: - Publisher Support
+
+import Combine
+
+extension NotificationCenter {
+    /// A publisher that emits values generated by a notification center with a given key.
+    ///
+    /// Use the ``valuesPublisher(for:)`` method to create an instance of this type, then subscribe to it to start receiving values.
+    public struct ValuesPublisher<Key: NotificationKey>: Combine.Publisher {
+        /// The kind of values published by this publisher.
+        public typealias Output = Key.Value
+        /// The kind of errors this publisher might publish.
+        public typealias Failure = Never
+
+        private typealias Base = Publishers.CompactMap<Publisher, Key.Value>
+
+        private let base: Base
+
+        fileprivate init(center: NotificationCenter) {
+            self.base = center
+                .publisher(for: Key.name)
+                .compactMap { notification in
+                    notification.userInfo?[ObjectIdentifier(Key.self)] as? Key.Value
+                }
+        }
+
+        /// Attaches the specified subscriber to this publisher.
+        ///
+        /// - Parameter subscriber: The subscriber to attach to this publisher, after which it can receive values.
+        public func receive<S: Subscriber>(
+            subscriber: S
+        ) where S.Input == Output, S.Failure == Failure {
+            base.receive(subscriber: subscriber)
+        }
+    }
+}
