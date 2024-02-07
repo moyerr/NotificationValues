@@ -2,6 +2,10 @@
 
 Send and receive typed values with [`NotificationCenter`](https://developer.apple.com/documentation/foundation/notificationcenter).
 
+## Documentation
+
+Full documentation for the framework can be found [here](https://moyerr.github.io/NotificationValues/documentation/notificationvalues).
+
 ## Overview
 
 This framework provides methods for dealing with strongly typed values in `NotificationCenter`. To begin sending values, create a `NotificationKey`, which will define the type of your notification's values:
