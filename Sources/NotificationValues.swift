@@ -175,9 +175,7 @@ extension NotificationCenter {
         fileprivate init(center: NotificationCenter) {
             self.base = center
                 .notifications(named: Key.name)
-                .compactMap { notification in
-                    notification.userInfo?[ObjectIdentifier(Key.self)] as? Key.Value
-                }
+                .compactMap { $0.value(for: Key.self) }
         }
         
         /// Creates the asynchronous iterator that produces elements of this asynchronous sequence.
@@ -210,9 +208,7 @@ extension NotificationCenter {
         fileprivate init(center: NotificationCenter) {
             self.base = center
                 .publisher(for: Key.name)
-                .compactMap { notification in
-                    notification.userInfo?[ObjectIdentifier(Key.self)] as? Key.Value
-                }
+                .compactMap { $0.value(for: Key.self) }
         }
 
         /// Attaches the specified subscriber to this publisher.
@@ -223,5 +219,15 @@ extension NotificationCenter {
         ) where S.Input == Output, S.Failure == Failure {
             base.receive(subscriber: subscriber)
         }
+    }
+}
+
+// MARK: - Private
+
+private extension Notification {
+    func value<Key>(
+        for key: Key.Type
+    ) -> Key.Value? where Key: NotificationKey {
+        userInfo?[ObjectIdentifier(Key.self)] as? Key.Value
     }
 }
