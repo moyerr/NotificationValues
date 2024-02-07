@@ -61,7 +61,7 @@ extension NotificationCenter {
     // MARK: Posting Values
 
     /// Posts a value to the notification center, using the given key.
-    ///
+    /// 
     /// - Parameters:
     ///   - value: The value to post.
     ///   - key: The notification key.
